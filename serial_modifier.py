@@ -1,4 +1,5 @@
 
+
 ##
 #$ socat -d -d pty,raw,echo=0 pty,raw,echo=0
 # 2025/02/14 11:43:31 socat[208745] N PTY is /dev/pts/2
@@ -35,33 +36,18 @@ TRANSFORM_ITEMS = [
     ("scale.z", "Scale Z", ""),
 ]
 
-# Safe getters and setters to avoid ID writing errors
-def get_serial_port(self):
-    return self.get("serial_port", "")
-
-def set_serial_port(self, value):
-    self["serial_port"] = value
-
-def get_transform_property(self):
-    return self.get("transform_property", "location.x")
-
-def set_transform_property(self, value):
-    self["transform_property"] = value
-
 # Attach properties per object
-bpy.types.Object.serial_port = bpy.props.StringProperty(
-    name="Serial Port",
-    description="Serial port for this object",
-    get=get_serial_port,
-    set=set_serial_port,
-)
-
+bpy.types.Object.serial_port = bpy.props.StringProperty(name="Serial Port", default="")
 bpy.types.Object.transform_property = bpy.props.EnumProperty(
     name="Property",
     description="Object transform property to send",
     items=TRANSFORM_ITEMS,
-    get=get_transform_property,
-    set=set_transform_property,
+    default="location.x"
+)
+bpy.types.Object.has_serial_stream = bpy.props.BoolProperty(
+    name="Has Serial Stream",
+    description="Enable Serial Stream for this object",
+    default=False
 )
 
 class SERIAL_OT_SelectPort(bpy.types.Operator):
@@ -122,17 +108,31 @@ def frame_change_handler(scene):
             except serial.SerialException:
                 print(f"Error: Unable to open serial port {serial_port} for {obj.name}")
 
+def ensure_handler():
+    """Ensure the frame handler remains active after restart"""
+    if frame_change_handler not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(frame_change_handler)
+
+def auto_register():
+    """Runs automatically after Blender startup to reinitialize the handler"""
+    ensure_handler()
+    return None  # Stops the timer from looping
+
 def register():
     bpy.utils.register_class(SERIAL_OT_SelectPort)
     bpy.utils.register_class(SERIAL_PT_ModifierPanel)
 
-    bpy.app.handlers.frame_change_post.append(frame_change_handler)
+    ensure_handler()
+
+    # Blender does not restart handlers on startup, so we use bpy.app.timers
+    bpy.app.timers.register(auto_register, first_interval=1.0)  # Runs 1 second after startup
 
 def unregister():
     bpy.utils.unregister_class(SERIAL_OT_SelectPort)
     bpy.utils.unregister_class(SERIAL_PT_ModifierPanel)
 
-    bpy.app.handlers.frame_change_post.remove(frame_change_handler)
+    if frame_change_handler in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(frame_change_handler)
 
 if __name__ == "__main__":
     register()
